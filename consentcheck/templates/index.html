@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ConsentCheck · Approval test bench</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/"><span class="logo" aria-hidden="true">✓</span> ConsentCheck <span class="version">MVP / 01</span></a>
+    <span class="local"><span></span> Local sandbox</span>
+  </header>
+  <main>
+    <div class="intro">
+      <div><p class="eyebrow">SECURE APPROVAL & EXECUTION TEST BENCH</p><h1>Approve with intent.<br>Execute with evidence.</h1><p class="subtitle">Follow one proposed action from human consent to a verified SQLite record.</p></div>
+      <button class="secondary" id="reset" disabled>↺ Reset demo</button>
+    </div>
+    <div class="pipeline" aria-label="Workflow">
+      <span id="step-proposal" class="active">01 <b>Agent proposal</b></span><span aria-hidden="true">→</span>
+      <span id="step-approval">02 <b>Human approval</b></span><span aria-hidden="true">→</span>
+      <span id="step-execution">03 <b>Secure execution</b></span><span aria-hidden="true">→</span>
+      <span id="step-evidence">04 <b>SQLite evidence</b></span>
+    </div>
+    <div id="notice" class="notice" role="status" aria-live="polite">Loading the default proposal…</div>
+    <div class="workspace">
+      <section class="card proposal">
+        <div class="card-heading"><div><p class="eyebrow">01 / AGENT PROPOSAL</p><h2>Proposed action</h2></div><span class="badge" id="action-status">PROPOSED</span></div>
+        <p class="description">Send a document to the project mentor.</p>
+        <dl class="metadata"><div><dt>Actor</dt><dd id="actor">—</dd></div><div><dt>Task</dt><dd id="task">—</dd></div><div><dt>Tool</dt><dd><code id="tool">—</code></dd></div></dl>
+        <div class="action-detail"><span class="field-label">Recipient</span><p id="recipient">—</p></div>
+        <div class="document"><span class="field-label">Document</span><p class="filename" id="document">—</p><span class="field-label">Document content</span><pre id="content">—</pre></div>
+        <div class="approval-controls"><h3>Human approval</h3><p class="description">Review the exact recipient and content before approving.</p><div class="buttons"><button id="approve" disabled>✓ Approve action</button><button class="danger" id="reject" disabled>Reject action</button></div></div>
+        <div class="footnote"><span aria-hidden="true">◇</span> Simulation only. No email is sent and no file is read.</div>
+      </section>
+      <div class="right-column">
+        <section class="card">
+          <div class="card-heading"><div><p class="eyebrow">02 / SERVER RECORD</p><h2>Approval evidence</h2></div><span class="indicator" id="approval-indicator">Awaiting consent</span></div>
+          <div class="empty" id="approval-empty"><span class="empty-symbol" aria-hidden="true">◎</span><p>Your decision starts the record.</p><small>The server generates an ID and freezes the action values.</small></div>
+          <dl class="evidence-fields" id="approval-evidence" hidden></dl>
+        </section>
+        <section class="card execute-card">
+          <div class="card-heading"><div><p class="eyebrow">03 / SECURE EXECUTOR</p><h2>Execute approved action</h2></div></div>
+          <p class="description">The executor reads the approved values from SQLite. Each approval is valid for 10 minutes and can be used once.</p>
+          <button class="execute" id="execute" disabled>Execute approved action <span aria-hidden="true">→</span></button>
+          <p class="execution-message" id="execution-message">Approve the proposed action to unlock execution.</p>
+        </section>
+      </div>
+    </div>
+    <section class="card attack-card" aria-labelledby="attack-heading">
+      <div class="card-heading"><div><p class="eyebrow">STAGE 1 / DETERMINISTIC TESTS</p><h2 id="attack-heading">Attack Simulator</h2></div><span class="badge">4 ATTACK FAMILIES</span></div>
+      <p class="description">Each test creates a fresh demo approval, modifies a later execution request, and checks the outbox through the API. Replay first executes one legitimate action.</p>
+      <div class="attack-buttons">
+        <button class="secondary" data-attack="recipient_substitution">Test Recipient Substitution</button>
+        <button class="secondary" data-attack="content_substitution">Test Content Substitution</button>
+        <button class="secondary" data-attack="replay">Test Replay</button>
+        <button class="secondary" data-attack="cross_task_reuse">Test Cross-Task Reuse</button>
+      </div>
+      <p class="attack-flow">Approved action → Modified request → Security check → Blocked → Outbox unchanged</p>
+      <p class="description">Legitimate execution: approved action → security check → success → exactly one outbox record.</p>
+      <div id="attack-results" class="attack-results" aria-live="polite"><p class="description" id="attack-empty">Choose a test to inspect its request and execution evidence.</p></div>
+    </section>
+    <section class="card outbox-card">
+      <div class="card-heading"><div><p class="eyebrow">04 / SQLITE OUTBOX</p><h2>Execution evidence <span class="count" id="outbox-count">0 records</span></h2></div><button class="text-button" id="refresh">Refresh evidence ↻</button></div>
+      <p class="description">Persisted side effects, independently retrieved from the local outbox.</p>
+      <div class="empty compact" id="outbox-empty">No execution records yet. Approve and execute the action to create one.</div>
+      <div class="table-wrap" id="outbox-table" hidden><table><thead><tr><th>Approval ID / record</th><th>Recipient</th><th>Document & content</th><th>Executed at</th><th>Status</th></tr></thead><tbody id="outbox-body"></tbody></table></div>
+    </section>
+    <footer><span>ConsentCheck · Foundation build</span><span>Server-owned approvals <span aria-hidden="true">/</span> Atomic execution <span aria-hidden="true">/</span> Single use</span></footer>
+  </main>
+</body>
+</html>

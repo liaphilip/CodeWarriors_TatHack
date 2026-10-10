@@ -23,7 +23,7 @@ function setBusy(value, label = 'Thinking through your request…') {
   $('#working').hidden = !value;
   $('#working-label').textContent = label;
   messages.setAttribute('aria-busy', String(value));
-  document.querySelectorAll('.proposal-actions button, .examples button').forEach((node) => { node.disabled = value; });
+  document.querySelectorAll('.proposal-actions button, .examples button, [data-chat-demo]').forEach((node) => { node.disabled = value; });
 }
 // Render basic emphasis safely using text nodes, never HTML from model output.
 function richText(container, text) {
@@ -193,3 +193,25 @@ async function initialize() {
   } catch { $('#connection').textContent = "Can't connect to the app. Please check the server and refresh."; }
 }
 initialize();
+
+
+async function simulateChatAttack(scenario) {
+  if (busy || !['recipient-tampering', 'misleading-approval'].includes(scenario)) return;
+  setBusy(true, 'Running controlled synthetic demonstration…');
+  $('#chat-demo-error').textContent = '';
+  try {
+    if (!conversationId) {
+      const created = await api('/api/conversations', {});
+      conversationId = created.conversation_id;
+      sessionStorage.setItem('assistant-conversation', conversationId);
+    }
+    const key = `chat-demo-${conversationId}-${scenario}`;
+    const token = sessionStorage.getItem(key) || crypto.randomUUID().replaceAll('-', '');
+    sessionStorage.setItem(key, token);
+    render(await api(`/api/conversations/${conversationId}/security/attacks/${scenario}`, {request_id: token}));
+    sessionStorage.removeItem(key);
+  } catch (error) {
+    $('#chat-demo-error').textContent = `${error.message} Retry retains the same demo request ID.`;
+  } finally { setBusy(false); scrollToLatest(); }
+}
+document.querySelectorAll('[data-chat-demo]').forEach((button) => button.addEventListener('click', () => simulateChatAttack(button.dataset.chatDemo)));

@@ -70,8 +70,11 @@ def test_status_unavailable_on_database_error(chat):
 def test_main_page_and_dashboard_share_dark_assets(chat):
     client, _, _ = chat
     page = client.get('/').text
-    assert page.count('class="metric"') == 4
-    assert 'PHANTOM LOOP SECURITY CENTER' in page
-    assert '/static/security-center.js?v=' in page
-    assert 'grid-template-columns:minmax(0,1fr) minmax(0,1fr)' in client.get('/static/style.css').text
+    assert page.count('class="metric"') == 0
+    assert page.count('data-chat-demo=') == 2
+    dashboard = client.get('/dashboard').text
+    assert dashboard.count('class="metric"') == 4
+    assert 'PHANTOM LOOP SECURITY CENTER' in dashboard
+    assert '/static/security-center.js?v=' in dashboard
+    assert 'grid-template-columns:minmax(0,1fr) minmax(0,1fr)' not in client.get('/static/style.css').text
     assert client.get('/dashboard').status_code == 200

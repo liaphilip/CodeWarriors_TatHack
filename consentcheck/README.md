@@ -54,7 +54,7 @@ model HTML. Raw tool JSON and model thought parts are not shown in the chat.
 ```powershell
 Push-Location .\consentcheck
 ..\.venv\Scripts\python.exe -m pytest -q
-node --test tests/frontend.test.cjs
+node --test tests/*.test.cjs
 Pop-Location
 Invoke-RestMethod http://127.0.0.1:8765/health
 ```
@@ -152,8 +152,7 @@ as a completed send.
 This remains an unauthenticated, loopback-only demo. The trusted Python backend and SQLite
 storage are the trust boundary: hashing does not protect against arbitrary database or code
 modification, authenticate a user, or establish that the model chose the user's intended
-recipient. Users must review the canonical card. No real email, attack demos, or comparative
-vulnerable/protected dashboard are implemented. Live Gemini remains unchanged; tests use mocks.
+recipient. Users must review the canonical card. No real email delivery is implemented. Live Gemini remains unchanged; tests use mocks.
 
 ## Troubleshooting
 
@@ -164,8 +163,7 @@ approved, executed state plus its matching simulated outbox row; blocked counts 
 secured action IDs with blocked events; pending excludes decided and expired records.
 Counts can overlap and exclude legacy/unknown action IDs. Metrics reload after chat actions,
 on focus, on manual refresh, and every 30 seconds while visible. Unavailable responses clear
-the counts rather than displaying fabricated zeros. The two planned scenario rows are only
-untested placeholders, with no attack controls or execution logic.
+the counts rather than displaying fabricated zeros. The two scenario rows load persisted synthetic results; fetching or refreshing never runs an attack.
 
 Missing configuration, authentication, model-access, quota, and connection failures produce
 user-facing errors without raw SDK exception bodies. Check the local key/model and Google
@@ -182,3 +180,35 @@ py -3.13 -m venv .venv-consentcheck
 Use that interpreter for run/test commands and exclude its directory locally before staging.
 Do not delete the old environment or Git history. SDK reference:
 [Google Gen AI Python SDK](https://github.com/googleapis/python-genai).
+
+
+## Phase 3: controlled synthetic demonstrations
+
+The two buttons in ATTACK TYPES run Recipient Tampering and Misleading Approval Display.
+Both are explicitly synthetic scenarios, not attacks on a live Gemini conversation.
+The first changes Alice to Bob after approval; the second also changes the body while the
+baseline's display still shows the original Alice/message approval. All addresses use
+`example.test`. The deliberately vulnerable baseline is a pure comparison function with
+no database, network, or executor access; it demonstrates acceptance, not a real send.
+
+Each protected scenario creates a temporary SQLite database with the existing schema and
+uses the real proposal registration, approval, and `simulate_send` security gate. Only
+results go into the application's new additive `attack_runs` table. No demo proposal or
+send enters the user's normal history, outbox, or four metrics. A malicious write is
+measured before rollback, so rollback cannot masquerade as prevention. PREVENTED requires
+an actual action-mismatch rejection, no unauthorized write, an unchanged approved descriptor,
+and a successful legitimate control through the normal decision path. Accepted malicious
+actions or writes are FAILED; other errors or incomplete evidence are INCOMPLETE.
+
+Endpoints:
+- `POST /api/security/attacks/recipient-tampering`
+- `POST /api/security/attacks/misleading-approval`
+- `GET /api/security/attacks` (counts and latest evidence for exactly two scenarios)
+
+POST bodies accept only a 32-character hexadecimal `request_id`. SQLite uniqueness makes
+retries/concurrent identical requests idempotent; the UI disables the active button and
+retains its request ID after a lost response. Attempts are reserved before running; an
+interrupted reservation remains explicitly INCOMPLETE, never counted as prevented. Once
+an incomplete response is received, a new click starts a new attempt. The protected gate
+is unchanged except for a specific mismatch exception subclass used to distinguish genuine
+mismatch rejections from unrelated failures. There is no insecure assistant mode.

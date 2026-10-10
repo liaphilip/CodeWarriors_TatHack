@@ -38,6 +38,17 @@ def initialize_database(path: Path) -> None:
             id INTEGER PRIMARY KEY, action_id TEXT, event TEXT NOT NULL,
             detail TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )''')
+        connection.execute('''CREATE TABLE IF NOT EXISTS attack_runs (
+            id TEXT PRIMARY KEY, request_id TEXT NOT NULL UNIQUE,
+            scenario TEXT NOT NULL CHECK(scenario IN ('recipient-tampering','misleading-approval')),
+            created_at TEXT NOT NULL, completed_at TEXT,
+            outcome TEXT NOT NULL CHECK(outcome IN ('INCOMPLETE','PREVENTED','FAILED')),
+            evidence TEXT
+        )''')
+        connection.execute('''CREATE TABLE IF NOT EXISTS chat_attack_runs (
+            request_id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL,
+            scenario TEXT NOT NULL, attack_run_id TEXT UNIQUE, message_id INTEGER UNIQUE
+        )''')
 
 
 def outbox_count(path: Path) -> int:

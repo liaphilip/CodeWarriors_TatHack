@@ -13,7 +13,8 @@ from .database import initialize_database, outbox_count
 from .conversations import Conversations, confirmation, initialize_chats
 from .execution import InvalidProposal
 from .provider import GeminiProvider
-from .schemas import DecisionInput, TaskInput
+from .schemas import DecisionInput, TaskInput, AttackInput
+from . import attack_demo
 from .security import dashboard, SecurityViolation
 from .metrics import security_summary
 
@@ -63,11 +64,47 @@ def create_app(settings: Settings | None = None, provider_factory=GeminiProvider
         except sqlite3.Error:
             raise HTTPException(503, 'Approval security engine status is unavailable.') from None
 
+    @app.get('/api/security/attacks')
+    def attack_results():
+        try:
+            return attack_demo.results(settings.database)
+        except sqlite3.Error:
+            raise HTTPException(503, 'Simulation results are unavailable. Please retry.') from None
+
+    def simulate_attack(scenario, request):
+        try:
+            return attack_demo.run(settings.database, scenario, request.request_id)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from None
+        except sqlite3.Error:
+            raise HTTPException(503, 'Simulation result could not be saved. Retry with the same request ID.') from None
+
+    @app.post('/api/security/attacks/recipient-tampering')
+    def recipient_tampering(request: AttackInput):
+        return simulate_attack('recipient-tampering', request)
+
+    @app.post('/api/security/attacks/misleading-approval')
+    def misleading_approval(request: AttackInput):
+        return simulate_attack('misleading-approval', request)
+
+    @app.post('/api/conversations/{identifier}/security/attacks/{scenario}')
+    def chat_attack(identifier: str, scenario: str, request: AttackInput):
+        with chat_lock:
+            try:
+                attack_demo.run_for_conversation(settings.database, identifier, scenario, request.request_id)
+                return chats.get(identifier)
+            except LookupError as exc:
+                raise HTTPException(404, str(exc)) from None
+            except ValueError as exc:
+                raise HTTPException(409, str(exc)) from None
+            except sqlite3.Error:
+                raise HTTPException(503, 'Demo result could not be saved. Retry with the same request ID.') from None
+
     def page(filename):
         # A refreshed page must not combine an old card renderer with a new API.
         # Content hashes change automatically whenever an asset changes.
         html = (ROOT / "static" / filename).read_text(encoding="utf-8")
-        for name in ("app.js", "style.css", "dashboard.js", "dashboard.css", "security-center.js"):
+        for name in ("app.js", "style.css", "dashboard.js", "dashboard.css", "security-center.js", "attacks.js"):
             version = sha256((ROOT / "static" / name).read_bytes()).hexdigest()[:16]
             html = html.replace(f'/static/{name}', f'/static/{name}?v={version}')
         return HTMLResponse(html)

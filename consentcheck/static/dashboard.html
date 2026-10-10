@@ -6,6 +6,7 @@
   <title>PHANTOM LOOP · Security records</title>
   <link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/dashboard.css">
   <script src="/static/security-center.js" defer></script>
+  <script src="/static/attacks.js" defer></script>
 </head>
 <body>
   <header class="header"><a class="brand" href="/">↻ PHANTOM LOOP</a><a class="new-chat" href="/">Back to AI Assistant</a></header>
@@ -21,10 +22,17 @@
       <section class="attack-section" aria-labelledby="attack-heading">
         <h3 id="attack-heading">ATTACK TYPES</h3>
         <div class="table-scroll"><table><thead><tr><th>Attack Type</th><th>Attacks</th><th>Prevented</th><th>Status</th></tr></thead><tbody>
-          <tr><td title="Planned scenario: changing the recipient after approval.">Recipient Tampering</td><td>Not tested</td><td>Not tested</td><td><span class="planned">Planned — not tested yet</span></td></tr>
-          <tr><td title="Planned scenario: showing approval information that misrepresents the authorized action.">Misleading Approval Display</td><td>Not tested</td><td>Not tested</td><td><span class="planned">Planned — not tested yet</span></td></tr>
+          <tr><td>Recipient Tampering</td><td id="attacks-recipient-tampering">Not tested</td><td id="prevented-recipient-tampering">Not tested</td><td><span id="status-recipient-tampering" class="planned">Planned — not tested yet</span></td></tr>
+          <tr><td>Misleading Approval Display</td><td id="attacks-misleading-approval">Not tested</td><td id="prevented-misleading-approval">Not tested</td><td><span id="status-misleading-approval" class="planned">Planned — not tested yet</span></td></tr>
         </tbody></table></div>
-        <p class="secondary">Planned scenarios only. No attack demonstrations have been run by this interface.</p>
+        <p class="secondary">Controlled synthetic scenarios using the real security gate in an isolated database. No live Gemini attack or production send.</p>
+        <div class="attack-controls">
+          <button id="simulate-recipient-tampering" class="new-chat" type="button">Simulate Recipient Tampering</button>
+          <button id="simulate-misleading-approval" class="new-chat" type="button">Simulate Misleading Approval</button>
+        </div>
+        <p id="attack-error" class="attack-failed" role="alert"></p>
+        <div id="result-recipient-tampering" aria-live="polite"></div>
+        <div id="result-misleading-approval" aria-live="polite"></div>
       </section>
   </main>
 </body>

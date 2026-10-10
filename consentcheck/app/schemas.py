@@ -17,6 +17,10 @@ class DecisionInput(StrictInput):
     decision: Literal["approve", "reject"]
 
 
+class AttackInput(StrictInput):
+    request_id: str = Field(pattern=r'^[a-f0-9]{32}$')
+
+
 class SearchInput(StrictInput):
     query: str = Field(min_length=1, max_length=200)
 

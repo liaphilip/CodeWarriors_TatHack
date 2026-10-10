@@ -15,6 +15,10 @@ class SecurityViolation(ValueError):
     pass
 
 
+class ActionMismatch(SecurityViolation):
+    """The actual operation does not match the trusted, versioned action."""
+
+
 class Action(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
     schema_version: Literal[1]
@@ -94,7 +98,7 @@ def verify(record, details):
                 or document['title'] != action.title):
             raise ValueError()
     except (ValueError, KeyError, TypeError):
-        raise SecurityViolation('Action or document differs from the trusted proposal. Prepare a new proposal.') from None
+        raise ActionMismatch('Action or document differs from the trusted proposal. Prepare a new proposal.') from None
     return action, document
 
 

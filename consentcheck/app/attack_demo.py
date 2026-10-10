@@ -171,6 +171,8 @@ def run_for_conversation(path, identifier, scenario, request_id):
             db.execute('BEGIN IMMEDIATE')
             if not db.execute('SELECT 1 FROM conversations WHERE id=?', (identifier,)).fetchone():
                 raise LookupError('This conversation is no longer available. Start a new chat.')
+            if db.execute("SELECT 1 FROM proposals WHERE conversation_id=? AND status='proposed'", (identifier,)).fetchone():
+                raise ValueError('A pending approval exists. Use its attack controls to target that specific proposal; an isolated demo cannot block it.')
             existing = db.execute('SELECT conversation_id,scenario,message_id FROM chat_attack_runs WHERE request_id=?', (request_id,)).fetchone()
             if existing:
                 if existing[:2] != (identifier, scenario):
@@ -190,3 +192,88 @@ def run_for_conversation(path, identifier, scenario, request_id):
                                     (identifier, chat_result_text(result))).lastrowid
             db.execute('UPDATE chat_attack_runs SET attack_run_id=?,message_id=? WHERE request_id=?',
                        (result['run_id'], message_id, request_id))
+
+
+def run_for_pending(path, identifier, proposal_id, scenario, request_id):
+    """Exercise the live gate without calling an executor; consume the pending card atomically."""
+    if scenario not in SCENARIOS:
+        raise LookupError('Unknown scenario')
+    with closing(sqlite3.connect(path)) as db, db:
+        db.execute('BEGIN IMMEDIATE')
+        existing = db.execute('SELECT conversation_id,proposal_id,scenario,evidence FROM pending_attack_runs WHERE request_id=?',
+                              (request_id,)).fetchone()
+        if existing:
+            if existing[:3] != (identifier, proposal_id, scenario):
+                raise ValueError('Request ID already belongs to another proposal or scenario.')
+            return json.loads(existing[3])
+        row = db.execute('SELECT details,status FROM proposals WHERE id=? AND conversation_id=?',
+                         (proposal_id, identifier)).fetchone()
+        if not row or not db.execute('SELECT 1 FROM conversations WHERE id=?', (identifier,)).fetchone():
+            raise LookupError('That proposal is not part of this conversation.')
+        record = security.load(db, proposal_id)
+        security.require_live(record, 'pending')
+        if row[1] != 'proposed' or record['conversation_id'] != identifier:
+            raise ValueError('Proposal is not pending in this conversation.')
+        action, _ = security.verify(record, json.loads(row[0]))
+        if not security.demo_eligible(action):
+            raise ValueError('This demonstration requires a synthetic Alice proposal without CC or BCC.')
+        reviewed = action.model_dump()
+        attempted = {**reviewed, 'recipient': 'bob@example.test'}
+        if scenario == 'misleading-approval':
+            attempted['body'] = 'Send the full synthetic report to Bob instead of the reviewed message.'
+        vulnerable = baseline(reviewed, attempted, True)
+        before = db.execute('SELECT COUNT(*) FROM outbox').fetchone()[0]
+        rejected = mismatch = accepted = False
+        reason = 'Execution evidence unavailable.'
+        # The explicit demo click authorizes testing the reviewed action, never a send.
+        # Roll back the temporary approval even if a regressed gate accepts the candidate.
+        db.execute('SAVEPOINT pending_demo')
+        try:
+            security.approve(db, proposal_id, reviewed)
+            security.gate(db, proposal_id, attempted)
+            accepted, reason = True, 'The gate accepted the mismatch; no executor was called.'
+        except security.ActionMismatch as exc:
+            rejected, mismatch, reason = True, True, str(exc)
+        except security.SecurityViolation as exc:
+            rejected, reason = True, str(exc)
+        except Exception:
+            reason = 'Unexpected gate error; prevention is unverified.'
+        after = db.execute('SELECT COUNT(*) FROM outbox').fetchone()[0]
+        current = security.load(db, proposal_id)
+        unchanged = all(current[key] == record[key] for key in ('descriptor', 'fingerprint'))
+        execution_observed = current['outbox_id'] is not None or after != before
+        db.execute('ROLLBACK TO pending_demo')
+        db.execute('RELEASE pending_demo')
+        outcome = 'FAILED' if accepted or execution_observed else 'PREVENTED' if mismatch and unchanged else 'INCOMPLETE'
+        db.execute("UPDATE secure_actions SET state='blocked',decision='reject',decided_at=?,verification=? WHERE id=?",
+                   (security.now().isoformat(), 'blocked' if rejected else 'not_completed', proposal_id))
+        db.execute("UPDATE proposals SET status='blocked' WHERE id=?", (proposal_id,))
+        security.event(db, proposal_id, 'blocked', f'Controlled {SCENARIOS[scenario]}: {reason}')
+        run_id = uuid4().hex
+        result = {'run_id': run_id, 'scenario': scenario, 'name': SCENARIOS[scenario],
+                  'proposal_id': proposal_id, 'reviewed_action': reviewed, 'attempted_action': attempted,
+                  'vulnerable': vulnerable, 'outcome': outcome, 'approval_status': 'blocked',
+                  'gate_rejected': rejected, 'mismatch_verified': mismatch, 'reason': reason,
+                  'trusted_action_unchanged': unchanged, 'execution_occurred': execution_observed,
+                  'outbox_before': before, 'outbox_after_attempt': after,
+                  'unauthorized_production_write': after != before,
+                  'outbox_after_rollback': db.execute('SELECT COUNT(*) FROM outbox').fetchone()[0]}
+        lines = [('ATTACK BLOCKED — approval rejected by security gate' if outcome == 'PREVENTED'
+                  else f'ATTACK {outcome} — approval disabled; prevention not verified'),
+                 f'Controlled synthetic demonstration — {SCENARIOS[scenario]}: {outcome}',
+                 'User-triggered demonstration; not generated by Gemini.', f'Run ID: {run_id}',
+                 f'Proposal ID: {proposal_id}']
+        for label, details in [('Original / reviewed', reviewed), ('Attempted altered action', attempted)]:
+            lines.append(f"{label}: Recipient: {details['recipient']} | Subject: {details['subject']} | Body: {details['body']}")
+        lines.extend(['Vulnerable baseline: accepted mismatch (pure comparison only; no send).',
+                      f"Actual security gate: {'rejected' if rejected else 'unverified / accepted'} — {reason}",
+                      'Approval status: blocked (terminal).',
+                      f"Execution occurred: {'Yes' if execution_observed else 'No — verified; executor never called'}.",
+                      f"Unauthorized production outbox write: {'Yes — rolled back' if after != before else 'No — verified'}.",
+                      f'Outbox evidence: before={before}, after attempt={after}, persisted={result["outbox_after_rollback"]}.',
+                      f'Final result: {outcome}'])
+        message_id = db.execute("INSERT INTO messages(conversation_id,role,text) VALUES (?, 'assistant', ?)",
+                                (identifier, '\n\n'.join(lines))).lastrowid
+        db.execute('INSERT INTO pending_attack_runs VALUES (?,?,?,?,?,?,?)',
+                   (request_id, identifier, proposal_id, scenario, run_id, json.dumps(result), message_id))
+        return result

@@ -49,6 +49,12 @@ def initialize_database(path: Path) -> None:
             request_id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL,
             scenario TEXT NOT NULL, attack_run_id TEXT UNIQUE, message_id INTEGER UNIQUE
         )''')
+        connection.execute('''CREATE TABLE IF NOT EXISTS pending_attack_runs (
+            request_id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL,
+            proposal_id TEXT NOT NULL UNIQUE, scenario TEXT NOT NULL,
+            run_id TEXT NOT NULL UNIQUE, evidence TEXT NOT NULL,
+            message_id INTEGER NOT NULL UNIQUE
+        )''')
 
 
 def outbox_count(path: Path) -> int:

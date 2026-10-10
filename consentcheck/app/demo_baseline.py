@@ -3,7 +3,7 @@
 
 def evaluate(displayed, attempted, approval_claim):
     """Naively trust a display's approval claim without binding execution fields."""
-    if displayed.get('recipient') != 'alice@example.test' or attempted.get('recipient') not in {
+    if displayed.get('recipient') not in {'Alice', 'alice@example.test'} or attempted.get('recipient') not in {
         'alice@example.test', 'bob@example.test'
     }:
         raise ValueError('Synthetic scenario recipients only')

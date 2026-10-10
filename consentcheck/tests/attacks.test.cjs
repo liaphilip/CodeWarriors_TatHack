@@ -5,11 +5,11 @@ const path = require('node:path');
 const vm = require('node:vm');
 const crypto = require('node:crypto');
 const scenarios = ['recipient-tampering', 'misleading-approval'];
-function harness(outcome = 'PREVENTED', failPost = false) {
+function harness(outcome = 'PREVENTED', failPost = false, readOnly = false) {
   const nodes = new Map(), storage = new Map(), calls = [];
   const make = () => ({textContent: '', children: [], handlers: {}, append(n) {this.children.push(n);},
     replaceChildren() {this.children = [];}, addEventListener(e, fn) {this.handlers[e] = fn;}});
-  const get = id => {if (!nodes.has(id)) nodes.set(id, make()); return nodes.get(id);};
+  const get = id => {if (readOnly && id.startsWith('simulate-')) return null; if (!nodes.has(id)) nodes.set(id, make()); return nodes.get(id);};
   let latest = null, count = 0, summaryRefreshes = 0;
   const context = {AbortController, setTimeout, clearTimeout, crypto,
     document: {getElementById:get, createElement:make},
@@ -67,4 +67,15 @@ test('transport errors preserve idempotency token for retry',async()=>{
   const posts=h.calls.filter(c=>c.method==='POST');
   assert.equal(posts[0].body,posts[1].body);
   assert(h.get('attack-error').textContent.includes('Retry uses the same request ID'));
+});
+
+test('dashboard without simulation controls still loads and refreshes evidence', async () => {
+  const html = fs.readFileSync(path.join(__dirname, '../static/dashboard.html'), 'utf8');
+  assert(!html.includes('id="simulate-'));
+  const h = harness('PREVENTED', false, true);
+  await settle();
+  await h.get('security-refresh').handlers.click();
+  assert.equal(h.get('attacks-recipient-tampering').textContent, 'Not tested');
+  assert.equal(h.calls.filter(c=>c.method==='POST').length, 0);
+  assert(h.calls.length >= 2);
 });

@@ -76,7 +76,7 @@
       get('attack-error').textContent = `Simulation response unavailable: ${error.message}. Retry uses the same request ID to avoid duplicates.`;
     } finally { running.delete(scenario); button.disabled = false; button.textContent = label; }
   }
-  scenarios.forEach((scenario) => get(`simulate-${scenario}`).addEventListener('click', () => simulate(scenario)));
+  scenarios.forEach((scenario) => get(`simulate-${scenario}`)?.addEventListener('click', () => simulate(scenario)));
   get('security-refresh').addEventListener('click', refresh);
   window.addEventListener('focus', refresh);
   refresh();

@@ -138,6 +138,12 @@ def gate(db, identifier, details):
     return action, document
 
 
+def demo_eligible(action):
+    """Only the two established synthetic Alice spellings, with no other recipients."""
+    return (action.recipient in {'Alice', 'alice@example.test'}
+            and not action.cc and not action.bcc and action.scope == 'local_simulated_outbox')
+
+
 def card(db, identifier, fallback):
     try:
         record = load(db, identifier)
@@ -151,6 +157,7 @@ def card(db, identifier, fallback):
               'rejected': 'rejected', 'failed': 'failed', 'blocked': 'blocked'}
     completed = record['state'] == 'executed'
     return {**fallback, **action.model_dump(), 'status': states[record['state']],
+            'attack_eligible': record['state'] == 'pending' and demo_eligible(action),
             'security': 'secured', 'expires_at': record['expires_at'], 'sent': completed,
             'simulated': True, 'execution_status': 'completed' if completed else
             'failed' if record['state'] == 'failed' else 'not_executed',

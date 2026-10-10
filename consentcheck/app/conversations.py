@@ -44,6 +44,12 @@ class Conversations:
                             "SELECT id, role, text, activity FROM messages WHERE conversation_id = ? ORDER BY id",
                             (identifier,))]
             by_id = {message["id"]: message for message in messages}
+            # Presentation metadata from persisted evidence, including after refresh.
+            # Keep the original report text and all audit records unchanged.
+            for message_id, evidence in db.execute(
+                    'SELECT message_id,evidence FROM pending_attack_runs WHERE conversation_id=?', (identifier,)):
+                if message_id in by_id:
+                    by_id[message_id]['attack_result'] = json.loads(evidence)
             for row in db.execute("SELECT id, message_id, details, status FROM proposals WHERE conversation_id = ?",
                                   (identifier,)):
                 by_id[row[1]]["proposals"].append(security.card(db, row[0], {**json.loads(row[2]), "id": row[0], "status": row[3]}))

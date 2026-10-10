@@ -3,7 +3,7 @@ from threading import RLock
 import sqlite3
 from hashlib import sha256
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Path as ApiPath
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -99,6 +99,21 @@ def create_app(settings: Settings | None = None, provider_factory=GeminiProvider
                 raise HTTPException(409, str(exc)) from None
             except sqlite3.Error:
                 raise HTTPException(503, 'Demo result could not be saved. Retry with the same request ID.') from None
+
+    @app.post('/api/conversations/{identifier}/proposals/{proposal_id}/attacks/{scenario}')
+    def pending_attack(request: AttackInput, scenario: str,
+                       identifier: str = ApiPath(pattern=r'^[a-f0-9]{32}$'),
+                       proposal_id: str = ApiPath(pattern=r'^[a-f0-9]{32}$')):
+        with chat_lock:
+            try:
+                result = attack_demo.run_for_pending(settings.database, identifier, proposal_id, scenario, request.request_id)
+                return {**chats.get(identifier), 'attack_result': result}
+            except LookupError as exc:
+                raise HTTPException(404, str(exc)) from None
+            except ValueError as exc:
+                raise HTTPException(409, str(exc)) from None
+            except sqlite3.Error:
+                raise HTTPException(503, 'Result could not be saved. Retry with the same request ID.') from None
 
     def page(filename):
         # A refreshed page must not combine an old card renderer with a new API.

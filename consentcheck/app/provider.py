@@ -1,10 +1,18 @@
 """Official Google Gen AI SDK adapter, with automatic execution disabled."""
 from google import genai
 from google.genai import errors, types
+import logging
+import random
+import time
+import httpx
 
 from .agent import ProviderError, ToolCall, Turn
 from .config import Settings
 from .tools import tool_declarations
+
+logger = logging.getLogger(__name__)
+MAX_ATTEMPTS = 3
+TRANSIENT_CODES = {408, 500, 502, 503, 504}
 
 SYSTEM = """You are AI Assistant, a helpful conversational assistant. Answer normal
 questions naturally and use previous conversation context for follow-ups. Give concise,
@@ -30,7 +38,8 @@ class GeminiProvider:
         self.model = settings.model
         self.client = genai.Client(
             api_key=settings.api_key, vertexai=False,
-            http_options=types.HttpOptions(timeout=30_000, retry_options=types.HttpRetryOptions(attempts=1)),
+            # Retry only this inference request below, never the agent or local tools.
+            http_options=types.HttpOptions(timeout=60_000, retry_options=types.HttpRetryOptions(attempts=1)),
         )
         self.history: list[types.Content] = []
         self.context: list[dict] = []
@@ -52,9 +61,21 @@ class GeminiProvider:
 
     def next_turn(self) -> Turn:
         try:
-            response = self.client.models.generate_content(
-                model=self.model, contents=self.history, config=self.config,
-            )
+            for attempt in range(MAX_ATTEMPTS):
+                try:
+                    response = self.client.models.generate_content(
+                        model=self.model, contents=self.history, config=self.config,
+                    )
+                    break
+                except (errors.APIError, httpx.TimeoutException) as exc:
+                    code = exc.code if isinstance(exc, errors.APIError) else 'transport_timeout'
+                    if isinstance(exc, errors.APIError) and code not in TRANSIENT_CODES:
+                        raise
+                    # Never log raw SDK errors, headers, prompts, or credentials.
+                    logger.warning('Gemini inference failed: code=%s attempt=%s/%s', code, attempt + 1, MAX_ATTEMPTS)
+                    if attempt == MAX_ATTEMPTS - 1:
+                        raise
+                    time.sleep(2 ** attempt + random.uniform(0, 0.5))
         except errors.APIError as exc:
             messages = {
                 400: "The assistant couldn't process that request. Check the local key and model settings.",
@@ -62,8 +83,12 @@ class GeminiProvider:
                 403: "The assistant doesn't have access to this model. Please check the account permissions.",
                 404: "The selected model isn't available. Please check the local model setting.",
                 429: "The assistant has reached its usage limit. Please check your quota or try again later.",
+                408: "Gemini timed out after limited retries. Nothing was sent. Please try again.",
+                504: "Gemini timed out (504 DEADLINE_EXCEEDED) after limited retries. Nothing was sent. Please try again.",
             }
             raise ProviderError(messages.get(exc.code, "The assistant's service is temporarily unavailable. Please try again later.")) from None
+        except httpx.TimeoutException:
+            raise ProviderError('Gemini connection timed out after limited retries. Nothing was sent. Please try again.') from None
         except Exception:
             # Raw SDK/network errors can contain credentials or request data.
             raise ProviderError("I couldn't reach the assistant's service. Please check the connection and try again.") from None

@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0B0D12">
+  <title>PHANTOM LOOP · Security records</title>
+  <link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/dashboard.css">
+  <script src="/static/security-center.js" defer></script>
+</head>
+<body>
+  <header class="header"><a class="brand" href="/">↻ PHANTOM LOOP</a><a class="new-chat" href="/">Back to AI Assistant</a></header>
+  <main class="dashboard">
+    <div class="dashboard-heading"><div><h1>PHANTOM LOOP SECURITY CENTER</h1><p id="protection-status" class="protection-status" role="status">Protection status: Checking availability…</p></div><button id="security-refresh" class="new-chat">Refresh</button></div>
+      <div class="metrics" aria-label="Security metrics" aria-busy="true">
+        <article class="metric"><h3>Actions Reviewed</h3><strong id="metric-reviewed">…</strong><p>Distinct secured actions with a decision or blocked review.</p></article>
+        <article class="metric"><h3>Approved &amp; Executed</h3><strong id="metric-executed">…</strong><p>Approved actions with a confirmed simulated outbox entry.</p></article>
+        <article class="metric"><h3>Blocked Actions</h3><strong id="metric-blocked">…</strong><p>Distinct secured actions with a recorded blocked attempt.</p></article>
+        <article class="metric"><h3>Pending Approvals</h3><strong id="metric-pending">…</strong><p>Unexpired actions awaiting a decision.</p></article>
+      </div>
+      <p id="metrics-status" class="secondary" role="status">Loading security records…</p>
+      <section class="attack-section" aria-labelledby="attack-heading">
+        <h3 id="attack-heading">ATTACK TYPES</h3>
+        <div class="table-scroll"><table><thead><tr><th>Attack Type</th><th>Attacks</th><th>Prevented</th><th>Status</th></tr></thead><tbody>
+          <tr><td title="Planned scenario: changing the recipient after approval.">Recipient Tampering</td><td>Not tested</td><td>Not tested</td><td><span class="planned">Planned — not tested yet</span></td></tr>
+          <tr><td title="Planned scenario: showing approval information that misrepresents the authorized action.">Misleading Approval Display</td><td>Not tested</td><td>Not tested</td><td><span class="planned">Planned — not tested yet</span></td></tr>
+        </tbody></table></div>
+        <p class="secondary">Planned scenarios only. No attack demonstrations have been run by this interface.</p>
+      </section>
+  </main>
+</body>
+</html>

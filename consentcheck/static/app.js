@@ -1,253 +1,195 @@
-"use strict";
-
-const $ = (id) => document.getElementById(id);
-let proposal = null;
-let approval = null;
+const $ = (selector) => document.querySelector(selector);
+const messages = $('#messages');
+const input = $('#task');
+let conversationId = sessionStorage.getItem('assistant-conversation');
 let busy = false;
-let locallyExpired = false;
-const attackNames = {
-  recipient_substitution: "Recipient Substitution",
-  content_substitution: "Content Substitution",
-  replay: "Replay",
-  cross_task_reuse: "Cross-Task Reuse",
+const activityLabels = {
+  search_documents: 'Searched documents', read_document: 'Read document',
+  propose_send_document: 'Prepared action',
 };
-
-async function api(path, method = "GET", body) {
-  const response = await fetch(path, {
-    method,
-    headers: body === undefined ? {} : { "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-    cache: "no-store",
-  });
-  const data = await response.json();
-  if (!response.ok) {
-    const detail = Array.isArray(data.detail)
-      ? data.detail.map((item) => item.msg).join(" ") : data.detail;
-    throw new Error(detail || "The request could not be completed.");
+function element(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text) node.textContent = text;
+  return node;
+}
+function scrollToLatest() {
+  requestAnimationFrame(() => $('#main').scrollTo({top: $('#main').scrollHeight, behavior: 'smooth'}));
+}
+function setBusy(value, label = 'Thinking through your request…') {
+  busy = value;
+  $('#send').disabled = value;
+  $('#new-chat').disabled = value;
+  $('#working').hidden = !value;
+  $('#working-label').textContent = label;
+  messages.setAttribute('aria-busy', String(value));
+  document.querySelectorAll('.proposal-actions button, .examples button').forEach((node) => { node.disabled = value; });
+}
+// Render basic emphasis safely using text nodes, never HTML from model output.
+function richText(container, text) {
+  for (const paragraph of text.split(/\n\s*\n/)) {
+    const lines = paragraph.split('\n');
+    const isList = lines.every((line) => /^\s*[-*]\s+/.test(line));
+    const group = element(isList ? 'ul' : 'p');
+    for (const line of isList ? lines : [paragraph]) {
+      const p = isList ? element('li') : group;
+      for (const piece of (isList ? line.replace(/^\s*[-*]\s+/, '') : line).split(/(\*\*[^*]+\*\*)/g)) {
+        p.append(piece.startsWith('**') && piece.endsWith('**')
+          ? element('strong', '', piece.slice(2, -2)) : document.createTextNode(piece));
+      }
+      if (isList) group.append(p);
+    }
+    container.append(group);
   }
+}
+function proposalCard(proposal) {
+  const card = element('article', 'proposal');
+  const content = element('div', 'proposal-content');
+  const heading = element('div', 'proposal-heading');
+  heading.append(element('h2', '', 'Ready to send this document?'));
+  const statuses = {proposed: 'Awaiting your review',
+    approved: proposal.execution_status === 'completed' ? 'Approved · simulated send completed' : 'Approved · not sent',
+    rejected: 'Rejected', failed: 'Simulated send failed', blocked: 'Execution blocked'};
+  const expired = proposal.status === 'proposed' && proposal.expires_at && Date.parse(proposal.expires_at) <= Date.now();
+  const visualState = expired ? 'expired' : proposal.execution_status === 'completed' ? 'executed' : proposal.status;
+  heading.append(element('span', `proposal-status ${visualState}`, expired ? 'Expired · new proposal required' : statuses[proposal.status] || 'Not sent'));
+  content.append(heading);
+  const details = element('dl');
+  const fields = [['Document', proposal.title], ['Recipient', proposal.recipient], ['Action', 'Send document']];
+  if (proposal.security === 'secured') fields.push(['CC', proposal.cc.join(', ') || 'None'],
+    ['BCC', proposal.bcc.join(', ') || 'None'], ['Subject', proposal.subject || '(empty)'],
+    ['Body', proposal.body || '(empty)'], ['Expires', new Date(proposal.expires_at).toLocaleString()]);
+  for (const [label, value] of fields) {
+    details.append(element('dt', '', label), element('dd', '', value));
+  }
+  const notice = ['failed', 'blocked'].includes(proposal.status) ? 'Nothing was sent. Please prepare a new proposal to try again.'
+    : proposal.status === 'approved' && proposal.execution_status !== 'completed'
+      ? 'Approval was recorded without completed execution. Nothing was sent.'
+      : 'Approval records a simulated send in the local outbox. No real email is sent.';
+  content.append(details, element('p', 'proposal-notice', notice));
+  card.append(content);
+  if (proposal.security === 'legacy') content.append(element('p', 'proposal-notice', 'Legacy record: not secured by Phase 2. Prepare a new proposal to send.'));
+  if (proposal.status === 'proposed' && proposal.security !== 'legacy') {
+    const actions = element('div', 'proposal-actions');
+    for (const [decision, label] of [['approve', 'Approve'], ['reject', 'Reject']]) {
+      const button = element('button', decision, label);
+      button.type = 'button';
+      button.setAttribute('aria-label', `${label} ${proposal.title} to ${proposal.recipient}`);
+      button.addEventListener('click', () => review(proposal.id, decision));
+      actions.append(button);
+    }
+    card.append(actions);
+  }
+  return card;
+}
+function addMessage(message, isError = false) {
+  $('#welcome').hidden = true;
+  const row = element('article', `message ${message.role}${isError ? ' error' : ''}`);
+  row.setAttribute('aria-label', message.role === 'user' ? 'You' : 'AI Assistant');
+  if (message.role !== 'user') {
+    const avatar = element('span', 'avatar', '✳');
+    avatar.setAttribute('aria-hidden', 'true');
+    row.append(avatar);
+  }
+  const body = element('div', 'message-body');
+  if (message.role !== 'user') body.append(element('p', 'message-label', 'AI Assistant'));
+  if (message.activity?.length) {
+    const activity = element('div', 'activity');
+    for (const name of [...new Set(message.activity.map((item) => item.tool))]) {
+      if (activityLabels[name]) {
+        const failed = message.activity.some((item) => item.tool === name && item.result?.error);
+        activity.append(element('span', '', failed ? 'A step needs attention' : activityLabels[name]));
+      }
+    }
+    body.append(activity);
+  }
+  const text = element('div', 'message-text');
+  richText(text, message.text);
+  body.append(text);
+  for (const proposal of message.proposals || []) body.append(proposalCard(proposal));
+  row.append(body);
+  messages.append(row);
+}
+function render(data) {
+  conversationId = data.conversation_id;
+  sessionStorage.setItem('assistant-conversation', conversationId);
+  messages.replaceChildren();
+  $('#welcome').hidden = Boolean(data.messages.length);
+  for (const message of data.messages) addMessage(message);
+}
+async function api(path, payload) {
+  let response;
+  try {
+    response = await fetch(path, payload ? {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload),
+    } : {});
+  } catch { throw new Error("I couldn't connect. Check that the app is running, then try again."); }
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : "I couldn't complete that request. Please try again.");
   return data;
 }
-
-function notice(message, error = false) {
-  $("notice").textContent = message;
-  $("notice").classList.toggle("error", error);
-}
-
-function date(value) {
-  return new Date(value).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "medium" });
-}
-
-function controls() {
-  $("approve").disabled = busy || !proposal || !!approval;
-  $("reject").disabled = busy || !proposal || (!!approval && approval.status !== "APPROVED") || locallyExpired;
-  $("execute").disabled = busy || !approval || approval.status !== "APPROVED" || locallyExpired;
-  $("reset").disabled = busy;
-  $("refresh").disabled = busy;
-  document.querySelectorAll("[data-attack]").forEach((button) => { button.disabled = busy || !proposal; });
-}
-
-function renderProposal() {
-  for (const [id, key] of Object.entries({ actor: "actor_id", task: "task_id", tool: "tool", recipient: "recipient", document: "document_name", content: "document_content" })) {
-    $(id).textContent = proposal[key];
-  }
-}
-
-function renderApproval() {
-  const status = locallyExpired ? "EXPIRED" : (approval?.status || "PROPOSED");
-  $("action-status").textContent = status;
-  $("action-status").className = "badge " + status.toLowerCase();
-  $("approval-empty").hidden = !!approval;
-  $("approval-evidence").hidden = !approval;
-  $("approval-evidence").replaceChildren();
-  $("approval-indicator").textContent = approval ? "Recorded by server" : "Awaiting consent";
-  if (approval) {
-    for (const [label, value] of [["Approval ID", approval.approval_id], ["Status", status], ["Created", date(approval.created_at)], ["Expires", date(approval.expires_at)], ["Authority", "Server-generated · stored in SQLite"]]) {
-      const group = document.createElement("div");
-      const term = document.createElement("dt");
-      const definition = document.createElement("dd");
-      term.textContent = label;
-      definition.textContent = value;
-      group.append(term, definition);
-      $("approval-evidence").append(group);
+async function submit() {
+  const task = input.value.trim();
+  if (!task || busy) return;
+  addMessage({role: 'user', text: task});
+  input.value = ''; input.style.height = 'auto';
+  setBusy(true); scrollToLatest();
+  try {
+    if (!conversationId) {
+      const created = await api('/api/conversations', {});
+      conversationId = created.conversation_id;
+      sessionStorage.setItem('assistant-conversation', conversationId);
     }
-  }
-  $("step-approval").classList.toggle("active", !!approval);
-  for (const id of ["step-execution", "step-evidence"]) $(id).classList.toggle("active", status === "EXECUTED");
-  const messages = {
-    PROPOSED: "Approve the proposed action to unlock execution.",
-    APPROVED: "Approved and ready. The server will verify expiry before execution.",
-    EXECUTED: "EXECUTION SUCCESSFUL · One simulated SENT record saved to SQLite.",
-    REJECTED: "BLOCKED · This action was rejected. Reset the demo to start again.",
-    EXPIRED: "BLOCKED · Approval expired. Reset the demo to start again.",
-  };
-  $("execution-message").textContent = messages[status] || "Awaiting human approval.";
-  controls();
-}
-
-async function refreshOutbox() {
-  const rows = await api("/api/outbox");
-  $("outbox-body").replaceChildren();
-  $("outbox-empty").hidden = rows.length > 0;
-  $("outbox-table").hidden = rows.length === 0;
-  $("outbox-count").textContent = `${rows.length} record${rows.length === 1 ? "" : "s"}`;
-  for (const row of rows) {
-    const tr = document.createElement("tr");
-    for (const value of [row.approval_id + ` / #${row.id}`, row.recipient, row.document_name + "\n" + row.document_content, date(row.executed_at), row.status]) {
-      const td = document.createElement("td");
-      td.textContent = value;
-      tr.append(td);
+    render(await api('/api/run', {task, conversation_id: conversationId}));
+  } catch (error) {
+    if (conversationId) {
+      try {
+        const saved = await api(`/api/conversations/${conversationId}`);
+        if (saved.messages.length) render(saved);
+      } catch {}
     }
-    tr.lastChild.className = "sent";
-    $("outbox-body").append(tr);
+    addMessage({role: 'assistant', text: error.message}, true);
   }
+  finally { setBusy(false); input.focus(); scrollToLatest(); window.refreshSecurityCenter?.(); }
 }
-
-async function action(work) {
+async function review(proposalId, decision) {
   if (busy) return;
-  busy = true;
-  controls();
-  try { await work(); }
-  catch (error) {
-    notice("BLOCKED · " + error.message, true);
-    if (approval) {
-      try { approval = await api(`/api/approvals/${approval.approval_id}`); }
-      catch { /* Preserve the decision evidence if the server is unreachable. */ }
-    }
-  } finally {
-    busy = false;
-    renderApproval();
-  }
+  setBusy(true, 'Saving your choice…'); scrollToLatest();
+  try {
+    render(await api('/api/decisions', {conversation_id: conversationId, proposal_id: proposalId, decision}));
+  } catch (error) {
+    // A request may have succeeded before the connection failed. Reload server
+    // state before enabling controls again, avoiding a stale actionable card.
+    try { render(await api(`/api/conversations/${conversationId}`)); } catch {}
+    addMessage({role: 'assistant', text: error.message}, true);
+  } finally { setBusy(false); input.focus(); scrollToLatest(); window.refreshSecurityCenter?.(); }
 }
-
-$("approve").addEventListener("click", () => action(async () => {
-  approval = await api("/api/approvals", "POST", proposal);
-  notice("APPROVAL CREATED · The server recorded your approval and froze the action values.");
+$('#task-form').addEventListener('submit', (event) => { event.preventDefault(); submit(); });
+input.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); submit(); }
+});
+input.addEventListener('input', () => {
+  input.style.height = 'auto'; input.style.height = `${Math.min(input.scrollHeight, 150)}px`;
+});
+document.querySelectorAll('[data-prompt]').forEach((button) => button.addEventListener('click', () => {
+  input.value = button.dataset.prompt; submit();
 }));
-
-$("reject").addEventListener("click", () => action(async () => {
-  approval = approval
-    ? await api(`/api/approvals/${approval.approval_id}/reject`, "POST")
-    : await api("/api/proposal/reject", "POST", proposal);
-  notice("REJECTED · The decision was saved. No action was executed.");
-}));
-
-$("execute").addEventListener("click", () => action(async () => {
-  await api(`/api/execute/${approval.approval_id}`, "POST");
-  approval = await api(`/api/approvals/${approval.approval_id}`);
-  await refreshOutbox();
-  notice("EXECUTION SUCCESSFUL · The approved action is now recorded in the SQLite outbox.");
-}));
-
-$("reset").addEventListener("click", () => action(async () => {
-  proposal = await api("/api/reset", "POST");
-  approval = null;
-  locallyExpired = false;
-  $("attack-results").replaceChildren();
-  renderProposal();
-  await refreshOutbox();
-  notice("Demo reset. The local approval and outbox records have been cleared.");
-}));
-
-$("refresh").addEventListener("click", () => action(async () => {
-  if (approval) approval = await api(`/api/approvals/${approval.approval_id}`);
-  await refreshOutbox();
-  notice("Evidence refreshed from SQLite.");
-}));
-
-function renderAttack(kind, result, error) {
-  $("attack-empty")?.remove();
-  const id = "result-" + kind;
-  let card = $(id);
-  if (!card) {
-    card = document.createElement("article");
-    card.id = id;
-    $("attack-results").append(card);
+$('#new-chat').addEventListener('click', () => {
+  if (busy) return;
+  conversationId = null; sessionStorage.removeItem('assistant-conversation');
+  messages.replaceChildren(); $('#welcome').hidden = false; input.value = ''; input.style.height = 'auto'; input.focus();
+  $('#main').scrollTo({top: 0, behavior: 'smooth'});
+});
+async function initialize() {
+  if (conversationId) {
+    setBusy(true, 'Restoring your conversation…');
+    try { render(await api(`/api/conversations/${conversationId}`)); scrollToLatest(); }
+    catch { conversationId = null; sessionStorage.removeItem('assistant-conversation'); }
+    finally { setBusy(false); }
   }
-  card.className = "attack-result " + (error ? "fail" : result.status.toLowerCase());
-  card.replaceChildren();
-  const heading = document.createElement("h3");
-  heading.textContent = attackNames[kind];
-  card.append(heading);
-  if (error) {
-    const message = document.createElement("p");
-    message.textContent = "ERROR · " + error + " No PASS result was recorded.";
-    card.append(message);
-    return;
-  }
-  const fields = document.createElement("dl");
-  fields.className = "evidence-fields";
-  for (const [label, value] of [
-    ["Expected", "BLOCK"],
-    ["Actual", result.blocked ? "BLOCKED" : "NOT BLOCKED AS EXPECTED"],
-    ["Unauthorized side effect", result.unauthorized_effect ? "DETECTED" : "NONE"],
-    ["Result", result.status],
-    ["HTTP result", `${result.http_status} · ${result.response_detail}`],
-    ["Approval ID", result.approval_id],
-    ["Outbox rows", `${result.outbox_before.length} before → ${result.outbox_after.length} after (this approval)`],
-    ["Attack created a row", result.side_effect_created ? "YES" : "NO"],
-  ]) {
-    const group = document.createElement("div");
-    const term = document.createElement("dt");
-    const valueElement = document.createElement("dd");
-    term.textContent = label;
-    valueElement.textContent = value;
-    group.append(term, valueElement);
-    fields.append(group);
-  }
-  card.append(fields);
-  if (result.legitimate_setup_executed) {
-    const note = document.createElement("p");
-    note.className = "description";
-    note.textContent = "Replay setup created one legitimate SENT row. The replay attempt must add nothing.";
-    card.append(note);
-  }
-  const details = document.createElement("details");
-  const summary = document.createElement("summary");
-  summary.textContent = "Inspect approved action, mutated request & evidence";
-  details.append(summary);
-  for (const [label, value] of [
-    ["Original approved action", result.original_approved_action],
-    ["Mutated execution request", {action: result.mutated_action}],
-    ["SQLite outbox before attack", result.outbox_before],
-    ["SQLite outbox after attack", result.outbox_after],
-  ]) {
-    const title = document.createElement("h4");
-    title.textContent = label;
-    const code = document.createElement("pre");
-    code.textContent = JSON.stringify(value, null, 2);
-    details.append(title, code);
-  }
-  card.append(details);
+  try {
+    const health = await api('/health');
+    if (!health.configured) $('#connection').textContent = 'The assistant needs a local API key and model before we can chat.';
+  } catch { $('#connection').textContent = "Can't connect to the app. Please check the server and refresh."; }
 }
-
-document.querySelectorAll("[data-attack]").forEach((button) => {
-  button.addEventListener("click", () => action(async () => {
-    const kind = button.dataset.attack;
-    notice(`Running ${attackNames[kind]} through the local execution API…`);
-    try {
-      const result = await api(`/api/attacks/${kind}`, "POST");
-      renderAttack(kind, result);
-      await refreshOutbox();
-      notice(`${attackNames[kind]} · ${result.status} · ${result.response_detail}`, result.status !== "PASS");
-    } catch (error) {
-      renderAttack(kind, null, error.message);
-      notice("Attack simulator error · " + error.message, true);
-    }
-  }));
-});
-
-setInterval(() => {
-  const expired = approval?.status === "APPROVED" && Date.now() >= Date.parse(approval.expires_at);
-  if (expired && !locallyExpired) {
-    locallyExpired = true;
-    renderApproval();
-    notice("BLOCKED · Approval expired. Reset the demo to start again.", true);
-  }
-}, 1000);
-
-action(async () => {
-  proposal = await api("/api/proposal", "POST");
-  renderProposal();
-  await refreshOutbox();
-  notice("Ready for review. All actions stay in this local sandbox.");
-});
+initialize();

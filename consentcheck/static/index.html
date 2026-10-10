@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0B0D12">
+  <title>PHANTOM LOOP · AI Assistant</title><link rel="stylesheet" href="/static/style.css">
+  <script src="/static/security-center.js" defer></script>
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <header class="header">
+    <a class="brand" href="/" aria-label="PHANTOM LOOP home"><span class="logo" aria-hidden="true">↻</span><span>PHANTOM LOOP</span></a>
+    <a href="/dashboard" class="new-chat">Security records ↗</a>
+  </header>
+  <main class="workspace">
+  <section class="assistant-panel" aria-labelledby="assistant-heading">
+    <div class="panel-heading"><h1 id="assistant-heading">AI Assistant</h1><button id="new-chat" class="new-chat" type="button">＋ New chat</button></div>
+  <div id="main" class="chat-scroll" tabindex="0" aria-label="Chat history">
+    <section id="welcome" class="welcome">
+      <div class="welcome-icon" aria-hidden="true">✳</div>
+      <p class="eyebrow">YOUR WORKSPACE, WITH OVERSIGHT</p>
+      <h2>What can I help you<br>with today?</h2>
+      <p class="intro">Find what you need, make sense of it,<br class="desktop-break"> and take the next step together.</p>
+      <div class="examples">
+        <button type="button" data-prompt="Help me find a document. What documents are available?"><span class="example-icon" aria-hidden="true">⌕</span><strong>Find a document</strong><span>Get to the right information</span><span class="arrow" aria-hidden="true">↗</span></button>
+        <button type="button" data-prompt="Find and summarize the quarterly report."><span class="example-icon" aria-hidden="true">≡</span><strong>Summarize a report</strong><span>Turn details into the key points</span><span class="arrow" aria-hidden="true">↗</span></button>
+        <button type="button" data-prompt="Find the quarterly report and prepare to send it to Alice."><span class="example-icon" aria-hidden="true">✉</span><strong>Prepare an email</strong><span>Get an action ready for review</span><span class="arrow" aria-hidden="true">↗</span></button>
+      </div>
+    </section>
+    <section id="messages" class="messages" aria-label="Conversation" role="log" aria-live="polite" aria-relevant="additions"></section>
+    <div id="working" class="working" role="status" hidden><span class="avatar" aria-hidden="true">✳</span><span class="dots"><i></i><i></i><i></i></span><span id="working-label">Thinking through your request…</span></div>
+  </div>
+  <footer class="composer-area">
+    <p id="connection" class="connection" role="status"></p>
+    <form id="task-form" class="composer">
+      <label class="sr-only" for="task">Message AI Assistant</label>
+      <textarea id="task" placeholder="Ask anything, or give me a task…" required maxlength="2000" rows="1"></textarea>
+      <div class="composer-bottom"><span>Enter to send <span class="shortcut">· Shift + Enter for a new line</span></span><button id="send" type="submit" aria-label="Send message" title="Send message">↑</button></div>
+    </form>
+    <p class="footnote">Demo workspace · Synthetic documents · No real emails</p>
+  </footer>
+  </section>
+  <aside class="security-panel" aria-labelledby="security-heading">
+    <div class="panel-heading"><h2 id="security-heading">PHANTOM LOOP SECURITY CENTER</h2><button id="security-refresh" class="icon-button" aria-label="Refresh security metrics" title="Refresh security metrics">↻</button></div>
+    <div class="security-content">
+      <p id="protection-status" class="protection-status" role="status">Protection status: Checking availability…</p>
+      <div class="metrics" aria-label="Security metrics" aria-busy="true">
+        <article class="metric"><h3>Actions Reviewed</h3><strong id="metric-reviewed">…</strong><p>Distinct secured actions with a decision or blocked review.</p></article>
+        <article class="metric"><h3>Approved &amp; Executed</h3><strong id="metric-executed">…</strong><p>Approved actions with a confirmed simulated outbox entry.</p></article>
+        <article class="metric"><h3>Blocked Actions</h3><strong id="metric-blocked">…</strong><p>Distinct secured actions with a recorded blocked attempt.</p></article>
+        <article class="metric"><h3>Pending Approvals</h3><strong id="metric-pending">…</strong><p>Unexpired actions awaiting a decision.</p></article>
+      </div>
+      <p id="metrics-status" class="secondary" role="status">Loading security records…</p>
+      <section class="attack-section" aria-labelledby="attack-heading">
+        <h3 id="attack-heading">ATTACK TYPES</h3>
+        <div class="table-scroll"><table><thead><tr><th>Attack Type</th><th>Attacks</th><th>Prevented</th><th>Status</th></tr></thead><tbody>
+          <tr><td title="Planned scenario: changing the recipient after approval.">Recipient Tampering</td><td>Not tested</td><td>Not tested</td><td><span class="planned">Planned — not tested yet</span></td></tr>
+          <tr><td title="Planned scenario: showing approval information that misrepresents the authorized action.">Misleading Approval Display</td><td>Not tested</td><td>Not tested</td><td><span class="planned">Planned — not tested yet</span></td></tr>
+        </tbody></table></div>
+        <p class="secondary">Planned scenarios only. No attack demonstrations have been run by this interface.</p>
+      </section>
+    </div>
+  </aside>
+  </main>
+</body>
+</html>
